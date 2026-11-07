@@ -1,1181 +1,764 @@
+
+import { useCallback, useEffect, useState } from "react";
 import {
+  Users as UsersIcon,
+  UserCheck,
+  UserX,
+  ShieldCheck,
+  Search,
+  RefreshCw,
+  Eye,
+  X,
+  Mail,
+  CalendarDays,
+  Building2,
+  Clock3,
+  AlertCircle,
   ChevronLeft,
   ChevronRight,
-  Eye,
-  Filter,
-  MoreVertical,
-  Search,
-  ShieldCheck,
-  UserCheck,
-  UserPlus,
-  Users,
+  LockKeyhole,
 } from "lucide-react";
 
-import {
-  useMemo,
-  useState,
-} from "react";
-
 import Colors from "../constants/colors";
+import {
+  getAdminUsers,
+  getAdminUserStats,
+  getAdminUserDetail,
+  updateAdminUserStatus,
+} from "../api/adminUsers";
+import { getStoredAdmin } from "../api/adminAuth";
 
-const mockUsers = [
-  {
-    id: 1,
-    full_name: "Samuel Kamau",
-    email: "samuel@example.com",
-    phone: "+254 712 345 678",
-    role: "organization_owner",
-    organization: "Sammy Prop Limited",
-    status: "active",
-    verified: true,
-    joined_at: "2026-08-02",
-  },
+const PRIMARY = Colors.primary || "#FF5722";
+const PAGE_SIZE = 10;
 
-  {
-    id: 2,
-    full_name: "Mary Wanjiku",
-    email: "mary@example.com",
-    phone: "+254 722 556 712",
-    role: "property_manager",
-    organization: "Green Homes Limited",
-    status: "active",
-    verified: true,
-    joined_at: "2026-08-11",
-  },
+const formatNumber = (value) =>
+  value === null || value === undefined
+    ? "—"
+    : Number(value).toLocaleString("en-KE");
 
-  {
-    id: 3,
-    full_name: "Kevin Mutua",
-    email: "kevin@example.com",
-    phone: "+254 733 468 210",
-    role: "accountant",
-    organization: "Prime Estate Managers",
-    status: "active",
-    verified: false,
-    joined_at: "2026-07-15",
-  },
+const formatDate = (value) =>
+  value
+    ? new Date(value).toLocaleDateString("en-KE", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      })
+    : "—";
 
-  {
-    id: 4,
-    full_name: "Jane Njeri",
-    email: "jane@example.com",
-    phone: "+254 710 498 760",
-    role: "tenant",
-    organization: "City Point Properties",
-    status: "suspended",
-    verified: true,
-    joined_at: "2026-06-28",
-  },
+const formatDateTime = (value) =>
+  value
+    ? new Date(value).toLocaleString("en-KE", {
+        dateStyle: "medium",
+        timeStyle: "short",
+      })
+    : "Never";
 
-  {
-    id: 5,
-    full_name: "Brian Mwangi",
-    email: "brian@example.com",
-    phone: "+254 701 887 430",
-    role: "caretaker",
-    organization: "North Ridge Property Group",
-    status: "active",
-    verified: true,
-    joined_at: "2026-08-18",
-  },
+function getRole(user) {
+  if (user.is_superuser) return "Super Admin";
+  if (user.is_staff) return "Platform Admin";
+  return "User";
+}
 
-  {
-    id: 6,
-    full_name: "Faith Muthoni",
-    email: "faith@example.com",
-    phone: "+254 719 324 786",
-    role: "leasing_agent",
-    organization: "Sammy Prop Limited",
-    status: "active",
-    verified: true,
-    joined_at: "2026-08-20",
-  },
-];
+function RoleBadge({ user }) {
+  const style = user.is_superuser
+    ? "bg-purple-50 text-purple-700"
+    : user.is_staff
+    ? "bg-orange-50 text-orange-700"
+    : "bg-slate-100 text-slate-600";
 
-export default function UsersPage() {
-  const [
-    search,
-    setSearch,
-  ] = useState("");
+  return (
+    <span className={`rounded-full px-3 py-1.5 text-xs font-bold ${style}`}>
+      {getRole(user)}
+    </span>
+  );
+}
 
-  const [
-    roleFilter,
-    setRoleFilter,
-  ] = useState("all");
+function AccountBadge({ active }) {
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold ${
+        active
+          ? "bg-emerald-50 text-emerald-700"
+          : "bg-red-50 text-red-700"
+      }`}
+    >
+      <span
+        className={`h-1.5 w-1.5 rounded-full ${
+          active ? "bg-emerald-500" : "bg-red-500"
+        }`}
+      />
+      {active ? "Active" : "Inactive"}
+    </span>
+  );
+}
 
-  const [
-    statusFilter,
-    setStatusFilter,
-  ] = useState("all");
+function StatCard({ title, value, icon: Icon, color = PRIMARY }) {
+  return (
+    <div className="rounded-[24px] border border-slate-100 bg-white p-5 shadow-sm">
+      <div
+        className="flex h-11 w-11 items-center justify-center rounded-xl"
+        style={{ backgroundColor: `${color}12` }}
+      >
+        <Icon size={21} color={color} />
+      </div>
+      <p className="mt-4 text-xs font-semibold text-slate-500">{title}</p>
+      <p className="mt-2 text-3xl font-black text-slate-900">
+        {formatNumber(value)}
+      </p>
+    </div>
+  );
+}
 
-  const [
-    page,
-    setPage,
-  ] = useState(1);
+function UserAvatar({ user, size = "md" }) {
+  const initial = (
+    user.full_name ||
+    user.username ||
+    "U"
+  ).charAt(0).toUpperCase();
 
-  const perPage = 5;
+  const dimensions = size === "lg"
+    ? "h-16 w-16 text-2xl"
+    : "h-11 w-11 text-lg";
 
-  /*
-   * =====================================================
-   * FILTER USERS
-   * =====================================================
-   */
+  return (
+    <div
+      className={`flex shrink-0 items-center justify-center rounded-2xl font-black ${dimensions}`}
+      style={{
+        backgroundColor: `${PRIMARY}12`,
+        color: PRIMARY,
+      }}
+    >
+      {initial}
+    </div>
+  );
+}
 
-  const filteredUsers =
-    useMemo(() => {
-      const keyword =
-        search
-          .trim()
-          .toLowerCase();
+function DetailField({ icon: Icon, label, value }) {
+  return (
+    <div className="flex items-start gap-3 py-3">
+      <Icon size={18} className="mt-0.5 shrink-0 text-slate-400" />
+      <div className="min-w-0">
+        <p className="text-xs text-slate-400">{label}</p>
+        <p className="mt-1 break-words text-sm font-semibold text-slate-700">
+          {value || "—"}
+        </p>
+      </div>
+    </div>
+  );
+}
 
-      return mockUsers.filter(
-        (user) => {
-          const matchesSearch =
-            !keyword ||
-            user.full_name
-              .toLowerCase()
-              .includes(
-                keyword
-              ) ||
-            user.email
-              .toLowerCase()
-              .includes(
-                keyword
-              ) ||
-            user.phone
-              .toLowerCase()
-              .includes(
-                keyword
-              ) ||
-            user.organization
-              .toLowerCase()
-              .includes(
-                keyword
-              );
+function UserDetails({
+  userId,
+  onClose,
+  onChanged,
+  currentAdmin,
+}) {
+  const [detail, setDetail] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
 
-          const matchesRole =
-            roleFilter === "all" ||
-            user.role ===
-              roleFilter;
+  const loadDetail = useCallback(async () => {
+    setLoading(true);
+    setError("");
 
-          const matchesStatus =
-            statusFilter === "all" ||
-            user.status ===
-              statusFilter;
-
-          return (
-            matchesSearch &&
-            matchesRole &&
-            matchesStatus
-          );
-        }
+    try {
+      const response = await getAdminUserDetail(userId);
+      setDetail(response.user);
+    } catch (err) {
+      setError(
+        err.response?.data?.message ||
+        err.response?.data?.detail ||
+        "Unable to load user details."
       );
-    }, [
-      search,
-      roleFilter,
-      statusFilter,
-    ]);
+    } finally {
+      setLoading(false);
+    }
+  }, [userId]);
 
-  /*
-   * =====================================================
-   * PAGINATION
-   * =====================================================
-   */
+  useEffect(() => {
+    loadDetail();
+  }, [loadDetail]);
 
-  const totalPages =
-    Math.max(
-      1,
-      Math.ceil(
-        filteredUsers.length /
-          perPage
-      )
+  const user = detail;
+
+  const canChangeStatus = Boolean(
+    user &&
+    !user.is_superuser &&
+    !(user.id === currentAdmin?.id && user.is_active) &&
+    (!user.is_staff || currentAdmin?.is_superuser)
+  );
+
+  const changeStatus = async () => {
+    if (!user || !canChangeStatus || saving) return;
+
+    const nextStatus = !user.is_active;
+
+    const confirmed = window.confirm(
+      nextStatus
+        ? `Activate the account for "${user.full_name}"?`
+        : `Deactivate the account for "${user.full_name}"? This will prevent future authenticated access.`
     );
 
-  const startIndex =
-    (page - 1) *
-    perPage;
+    if (!confirmed) return;
 
-  const paginatedUsers =
-    filteredUsers.slice(
-      startIndex,
-      startIndex +
-        perPage
-    );
+    setSaving(true);
+    setError("");
 
-  /*
-   * =====================================================
-   * SUMMARY
-   * =====================================================
-   */
+    try {
+      const response = await updateAdminUserStatus(
+        user.id,
+        nextStatus
+      );
 
-  const totalUsers =
-    mockUsers.length;
-
-  const activeUsers =
-    mockUsers.filter(
-      (user) =>
-        user.status ===
-        "active"
-    ).length;
-
-  const verifiedUsers =
-    mockUsers.filter(
-      (user) =>
-        user.verified
-    ).length;
-
-  const managers =
-    mockUsers.filter(
-      (user) =>
-        user.role ===
-        "property_manager"
-    ).length;
-
-  /*
-   * =====================================================
-   * RESET
-   * =====================================================
-   */
-
-  const resetFilters = () => {
-    setSearch("");
-    setRoleFilter("all");
-    setStatusFilter("all");
-    setPage(1);
+      setDetail(response.user);
+      onChanged();
+    } catch (err) {
+      setError(
+        err.response?.data?.message ||
+        err.response?.data?.detail ||
+        "Unable to update user status."
+      );
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
-    <div>
-      {/* =================================================
-          HEADER
-      ================================================= */}
+    <div className="fixed inset-0 z-50 flex justify-end">
+      <button
+        type="button"
+        aria-label="Close user details"
+        onClick={onClose}
+        className="absolute inset-0 bg-slate-900/50"
+      />
 
-      <div className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
-        <div>
-          <p
-            className="text-sm font-bold"
-            style={{
-              color:
-                Colors.primary,
-            }}
+      <aside
+        role="dialog"
+        aria-modal="true"
+        aria-label="User details"
+        className="relative z-10 flex h-full w-full max-w-2xl flex-col overflow-hidden bg-white shadow-2xl"
+      >
+        <div className="flex items-center justify-between border-b border-slate-100 px-6 py-5">
+          <div>
+            <h2 className="text-xl font-black text-slate-900">
+              User Details
+            </h2>
+            <p className="mt-1 text-xs text-slate-400">
+              Account information and organization memberships
+            </p>
+          </div>
+
+          <button
+            onClick={onClose}
+            className="rounded-xl bg-slate-100 p-2.5 text-slate-600 hover:bg-slate-200"
           >
-            User Management
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-6">
+          {loading ? (
+            <div className="flex justify-center py-20">
+              <RefreshCw
+                size={28}
+                color={PRIMARY}
+                className="animate-spin"
+              />
+            </div>
+          ) : !user ? (
+            <div className="rounded-xl bg-red-50 p-4 text-sm text-red-700">
+              {error || "User not found."}
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {error && (
+                <div role="alert" className="rounded-xl bg-red-50 p-4 text-sm text-red-700">
+                  {error}
+                </div>
+              )}
+
+              <div className="flex items-center gap-4">
+                <UserAvatar user={user} size="lg" />
+
+                <div className="min-w-0">
+                  <h3 className="text-xl font-black text-slate-900">
+                    {user.full_name}
+                  </h3>
+                  <p className="mt-1 text-sm text-slate-500">
+                    @{user.username}
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <AccountBadge active={user.is_active} />
+                    <RoleBadge user={user} />
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-2xl bg-slate-50 p-5">
+                  <p className="text-xs text-slate-500">Organizations</p>
+                  <p className="mt-2 text-2xl font-black text-slate-900">
+                    {formatNumber(user.organization_count)}
+                  </p>
+                </div>
+                <div className="rounded-2xl bg-slate-50 p-5">
+                  <p className="text-xs text-slate-500">Account Type</p>
+                  <p className="mt-2 text-sm font-black text-slate-900">
+                    {getRole(user)}
+                  </p>
+                </div>
+              </div>
+
+              <section className="rounded-2xl border border-slate-100 p-5">
+                <h4 className="font-black text-slate-900">
+                  Account Information
+                </h4>
+                <div className="mt-3 grid gap-x-5 sm:grid-cols-2">
+                  <DetailField
+                    icon={Mail}
+                    label="Email Address"
+                    value={user.email}
+                  />
+                  <DetailField
+                    icon={UsersIcon}
+                    label="Username"
+                    value={user.username}
+                  />
+                  <DetailField
+                    icon={CalendarDays}
+                    label="Registration Date"
+                    value={formatDate(user.created_at)}
+                  />
+                  <DetailField
+                    icon={Clock3}
+                    label="Last Login"
+                    value={formatDateTime(user.last_login)}
+                  />
+                </div>
+              </section>
+
+              <section className="overflow-hidden rounded-2xl border border-slate-100">
+                <div className="border-b border-slate-100 p-5">
+                  <h4 className="font-black text-slate-900">
+                    Organization Memberships
+                  </h4>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Organizations and assigned roles for this user
+                  </p>
+                </div>
+
+                <div className="divide-y divide-slate-100">
+                  {(user.memberships || []).map((membership) => (
+                    <div
+                      key={membership.id}
+                      className="flex items-start gap-3 p-5"
+                    >
+                      <div
+                        className="rounded-xl p-3"
+                        style={{ backgroundColor: `${PRIMARY}12` }}
+                      >
+                        <Building2 size={19} color={PRIMARY} />
+                      </div>
+
+                      <div className="min-w-0 flex-1">
+                        <p className="font-bold text-slate-800">
+                          {membership.organization_name}
+                        </p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          {membership.roles?.join(", ") ||
+                            membership.primary_role ||
+                            "No role assigned"}
+                        </p>
+                      </div>
+
+                      <AccountBadge active={membership.is_active} />
+                    </div>
+                  ))}
+
+                  {!user.memberships?.length && (
+                    <div className="p-10 text-center text-sm text-slate-400">
+                      This user has no organization memberships.
+                    </div>
+                  )}
+                </div>
+              </section>
+
+              <section className="rounded-2xl border border-slate-100 p-5">
+                <div className="flex flex-wrap items-center justify-between gap-4">
+                  <div>
+                    <h4 className="font-black text-slate-900">
+                      Account Access
+                    </h4>
+                    <p className="mt-1 max-w-sm text-xs leading-5 text-slate-500">
+                      Activate or deactivate this user's UNIT account.
+                      This does not change their organization roles.
+                    </p>
+                  </div>
+
+                  <button
+                    onClick={changeStatus}
+                    disabled={!canChangeStatus || saving}
+                    className={`inline-flex items-center gap-2 rounded-xl px-4 py-3 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-40 ${
+                      user.is_active ? "bg-red-600" : "bg-emerald-600"
+                    }`}
+                  >
+                    {saving ? (
+                      <RefreshCw size={16} className="animate-spin" />
+                    ) : user.is_active ? (
+                      <UserX size={16} />
+                    ) : (
+                      <UserCheck size={16} />
+                    )}
+
+                    {saving
+                      ? "Saving..."
+                      : user.is_active
+                      ? "Deactivate Account"
+                      : "Activate Account"}
+                  </button>
+                </div>
+
+                {!canChangeStatus && (
+                  <p className="mt-3 flex items-center gap-2 text-xs text-amber-700">
+                    <LockKeyhole size={15} />
+                    This account is protected from status changes by
+                    your current administrator permissions.
+                  </p>
+                )}
+              </section>
+            </div>
+          )}
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+export default function Users() {
+  const [users, setUsers] = useState([]);
+  const [stats, setStats] = useState(null);
+  const [searchInput, setSearchInput] = useState("");
+  const [search, setSearch] = useState("");
+  const [status, setStatus] = useState("");
+  const [role, setRole] = useState("");
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [selectedUser, setSelectedUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [reloadKey, setReloadKey] = useState(0);
+
+  const currentAdmin = getStoredAdmin();
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setSearch(searchInput.trim());
+      setPage(1);
+    }, 350);
+
+    return () => clearTimeout(timer);
+  }, [searchInput]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const load = async () => {
+      setLoading(true);
+      setError("");
+
+      try {
+        const [userResponse, statsResponse] = await Promise.all([
+          getAdminUsers({
+            page,
+            page_size: PAGE_SIZE,
+            ...(search && { search }),
+            ...(status && { status }),
+            ...(role && { role }),
+          }),
+          getAdminUserStats(),
+        ]);
+
+        if (cancelled) return;
+
+        setUsers(userResponse.results || []);
+        setTotal(userResponse.count || 0);
+        setStats(statsResponse);
+      } catch (err) {
+        if (cancelled) return;
+
+        setError(
+          err.response?.data?.message ||
+          err.response?.data?.detail ||
+          "Unable to load UNIT users."
+        );
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
+    load();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [page, search, status, role, reloadKey]);
+
+  const refresh = () => setReloadKey((prev) => prev + 1);
+
+  return (
+    <div className="space-y-7 pb-10">
+      {/* Header */}
+      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+        <div>
+          <p className="text-sm font-bold" style={{ color: PRIMARY }}>
+            UNIT ADMINISTRATION
           </p>
-
-          <h1 className="mt-1 text-3xl font-black tracking-tight text-slate-900">
-            Users
+          <h1 className="mt-1 text-3xl font-black text-slate-900">
+            Users Management
           </h1>
-
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
-            Manage users registered on
-            UNIT, their roles,
-            organizations, account
-            status and verification.
+          <p className="mt-2 text-sm text-slate-500">
+            Monitor registered users, account access, platform roles
+            and organization memberships.
           </p>
         </div>
 
         <button
-          type="button"
-          onClick={() => {
-            console.log(
-              "Add user"
-            );
-          }}
-          className="flex items-center justify-center gap-2 rounded-2xl px-5 py-3 text-sm font-bold text-white transition hover:opacity-90"
-          style={{
-            backgroundColor:
-              Colors.primary,
-          }}
+          onClick={refresh}
+          disabled={loading}
+          className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-700 disabled:opacity-50"
         >
-          <UserPlus
-            size={18}
+          <RefreshCw
+            size={17}
+            className={loading ? "animate-spin" : ""}
           />
-
-          Add User
+          Refresh
         </button>
       </div>
 
-      {/* =================================================
-          SUMMARY
-      ================================================= */}
-
-      <div className="mt-8 grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
-        <SummaryCard
-          icon={Users}
-          label="Total Users"
-          value={
-            totalUsers
-          }
-          helper="Registered accounts"
+      {/* Statistics */}
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard
+          title="Total Users"
+          value={stats?.total_users}
+          icon={UsersIcon}
         />
-
-        <SummaryCard
+        <StatCard
+          title="Active Users"
+          value={stats?.active_users}
           icon={UserCheck}
-          label="Active Users"
-          value={
-            activeUsers
-          }
-          helper="Currently active"
+          color="#059669"
         />
-
-        <SummaryCard
+        <StatCard
+          title="Inactive Users"
+          value={stats?.inactive_users}
+          icon={UserX}
+          color="#DC2626"
+        />
+        <StatCard
+          title="Platform Administrators"
+          value={stats?.platform_admins}
           icon={ShieldCheck}
-          label="Verified Users"
-          value={
-            verifiedUsers
-          }
-          helper="Verified accounts"
-        />
-
-        <SummaryCard
-          icon={Users}
-          label="Property Managers"
-          value={
-            managers
-          }
-          helper="Manager accounts"
         />
       </div>
 
-      {/* =================================================
-          FILTERS
-      ================================================= */}
-
-      <div className="mt-8 rounded-[28px] border border-slate-100 bg-white p-5 shadow-sm">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-center">
-          {/* SEARCH */}
-
-          <div className="flex h-12 flex-1 items-center rounded-2xl border border-slate-200 bg-slate-50 px-4 transition focus-within:border-orange-200 focus-within:bg-white">
-            <Search
-              size={18}
-              className="text-slate-400"
-            />
-
-            <input
-              value={
-                search
-              }
-              onChange={(
-                event
-              ) => {
-                setSearch(
-                  event.target.value
-                );
-
-                setPage(1);
-              }}
-              type="text"
-              placeholder="Search name, email, phone or organization..."
-              className="flex-1 bg-transparent px-3 text-sm text-slate-700 outline-none placeholder:text-slate-400"
-            />
-          </div>
-
-          {/* ROLE */}
-
-          <div className="flex items-center gap-2">
-            <Filter
-              size={17}
-              className="hidden text-slate-400 sm:block"
-            />
-
-            <select
-              value={
-                roleFilter
-              }
-              onChange={(
-                event
-              ) => {
-                setRoleFilter(
-                  event.target.value
-                );
-
-                setPage(1);
-              }}
-              className="h-12 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-600 outline-none"
-            >
-              <option value="all">
-                All roles
-              </option>
-
-              <option value="organization_owner">
-                Organization Owner
-              </option>
-
-              <option value="organization_admin">
-                Organization Admin
-              </option>
-
-              <option value="property_manager">
-                Property Manager
-              </option>
-
-              <option value="accountant">
-                Accountant
-              </option>
-
-              <option value="landlord">
-                Landlord
-              </option>
-
-              <option value="tenant">
-                Tenant
-              </option>
-
-              <option value="investor">
-                Investor
-              </option>
-
-              <option value="caretaker">
-                Caretaker
-              </option>
-
-              <option value="leasing_agent">
-                Leasing Agent
-              </option>
-
-              <option value="support_agent">
-                Support Agent
-              </option>
-            </select>
-          </div>
-
-          {/* STATUS */}
-
-          <select
-            value={
-              statusFilter
-            }
-            onChange={(
-              event
-            ) => {
-              setStatusFilter(
-                event.target.value
-              );
-
-              setPage(1);
-            }}
-            className="h-12 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-600 outline-none"
-          >
-            <option value="all">
-              All statuses
-            </option>
-
-            <option value="active">
-              Active
-            </option>
-
-            <option value="suspended">
-              Suspended
-            </option>
-          </select>
-
-          <button
-            type="button"
-            onClick={
-              resetFilters
-            }
-            className="h-12 rounded-2xl border border-slate-200 px-4 text-sm font-bold text-slate-500 transition hover:bg-slate-50"
-          >
-            Reset
-          </button>
-        </div>
-      </div>
-
-      {/* =================================================
-          USERS LIST
-      ================================================= */}
-
-      <div className="mt-6 overflow-hidden rounded-[30px] border border-slate-100 bg-white shadow-sm">
-        <div className="flex flex-col gap-3 border-b border-slate-100 p-6 sm:flex-row sm:items-center sm:justify-between">
+      {/* Table */}
+      <section className="overflow-hidden rounded-[26px] border border-slate-100 bg-white shadow-sm">
+        <div className="flex flex-col gap-4 border-b border-slate-100 p-5 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <h2 className="text-lg font-black text-slate-900">
               Registered Users
             </h2>
-
-            <p className="mt-1 text-sm text-slate-500">
-              {
-                filteredUsers.length
-              }{" "}
-              user
-              {filteredUsers.length ===
-              1
-                ? ""
-                : "s"}{" "}
-              found.
+            <p className="mt-1 text-xs text-slate-400">
+              {formatNumber(total)} matching accounts
             </p>
           </div>
 
-          <button
-            type="button"
-            className="self-start text-sm font-bold sm:self-auto"
-            style={{
-              color:
-                Colors.primary,
-            }}
-          >
-            Export Users
-          </button>
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <div className="relative">
+              <Search
+                size={17}
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+              />
+              <input
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                placeholder="Search name, email..."
+                className="w-full rounded-xl border border-slate-200 py-3 pl-10 pr-4 text-sm outline-none focus:border-orange-400 sm:w-60"
+              />
+            </div>
+
+            <select
+              value={status}
+              onChange={(e) => {
+                setStatus(e.target.value);
+                setPage(1);
+              }}
+              className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none"
+            >
+              <option value="">All Accounts</option>
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+            </select>
+
+            <select
+              value={role}
+              onChange={(e) => {
+                setRole(e.target.value);
+                setPage(1);
+              }}
+              className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none"
+            >
+              <option value="">All Roles</option>
+              <option value="user">Regular Users</option>
+              <option value="admin">Platform Admins</option>
+              <option value="superadmin">Super Admins</option>
+            </select>
+          </div>
         </div>
 
-        {/* =================================================
-            DESKTOP TABLE
-        ================================================= */}
+        {error && (
+          <div
+            role="alert"
+            className="m-5 flex items-center gap-2 rounded-xl bg-red-50 p-4 text-sm text-red-700"
+          >
+            <AlertCircle size={18} />
+            {error}
+          </div>
+        )}
 
-        <div className="hidden overflow-x-auto md:block">
-          <table className="w-full min-w-[1100px]">
-            <thead>
-              <tr className="border-b border-slate-100 bg-slate-50/70 text-left">
-                <TableHead>
-                  User
-                </TableHead>
-
-                <TableHead>
-                  Organization
-                </TableHead>
-
-                <TableHead>
-                  Role
-                </TableHead>
-
-                <TableHead>
-                  Verification
-                </TableHead>
-
-                <TableHead>
-                  Status
-                </TableHead>
-
-                <TableHead>
-                  Joined
-                </TableHead>
-
-                <TableHead>
-                  Actions
-                </TableHead>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[950px] text-left">
+            <thead className="bg-slate-50/80">
+              <tr className="text-xs uppercase tracking-wide text-slate-400">
+                <th className="px-5 py-4">User</th>
+                <th className="px-5 py-4">Platform Role</th>
+                <th className="px-5 py-4">Organizations</th>
+                <th className="px-5 py-4">Account Status</th>
+                <th className="px-5 py-4">Registered</th>
+                <th className="px-5 py-4">Last Login</th>
+                <th className="px-5 py-4">Action</th>
               </tr>
             </thead>
 
             <tbody>
-              {paginatedUsers.map(
-                (
-                  user
-                ) => (
+              {!loading &&
+                users.map((user) => (
                   <tr
-                    key={
-                      user.id
-                    }
-                    className="border-b border-slate-50 transition hover:bg-slate-50/60 last:border-0"
+                    key={user.id}
+                    className="border-t border-slate-100 transition hover:bg-slate-50/60"
                   >
-                    {/* USER */}
-
-                    <td className="px-6 py-5">
+                    <td className="px-5 py-4">
                       <div className="flex items-center gap-3">
-                        <UserAvatar
-                          name={
-                            user.full_name
-                          }
-                        />
-
-                        <div>
+                        <UserAvatar user={user} />
+                        <div className="min-w-0">
                           <p className="font-bold text-slate-800">
-                            {
-                              user.full_name
-                            }
+                            {user.full_name}
                           </p>
-
                           <p className="mt-1 text-xs text-slate-400">
-                            {
-                              user.email
-                            }
-                          </p>
-
-                          <p className="mt-1 text-xs text-slate-400">
-                            {
-                              user.phone
-                            }
+                            {user.email || user.username}
                           </p>
                         </div>
                       </div>
                     </td>
 
-                    {/* ORGANIZATION */}
-
-                    <td className="px-6 py-5">
-                      <p className="text-sm font-semibold text-slate-700">
-                        {
-                          user.organization
-                        }
-                      </p>
+                    <td className="px-5 py-4">
+                      <RoleBadge user={user} />
                     </td>
 
-                    {/* ROLE */}
-
-                    <td className="px-6 py-5">
-                      <RoleBadge
-                        role={
-                          user.role
-                        }
-                      />
+                    <td className="px-5 py-4 text-sm font-semibold text-slate-600">
+                      {formatNumber(user.organization_count)}
                     </td>
 
-                    {/* VERIFIED */}
-
-                    <td className="px-6 py-5">
-                      {user.verified ? (
-                        <div className="flex items-center gap-2 text-sm font-bold text-emerald-600">
-                          <ShieldCheck
-                            size={17}
-                          />
-
-                          Verified
-                        </div>
-                      ) : (
-                        <span className="text-sm font-semibold text-slate-400">
-                          Not verified
-                        </span>
-                      )}
+                    <td className="px-5 py-4">
+                      <AccountBadge active={user.is_active} />
                     </td>
 
-                    {/* STATUS */}
-
-                    <td className="px-6 py-5">
-                      <UserStatusBadge
-                        status={
-                          user.status
-                        }
-                      />
+                    <td className="px-5 py-4 text-sm text-slate-500">
+                      {formatDate(user.created_at)}
                     </td>
 
-                    {/* JOINED */}
-
-                    <td className="px-6 py-5 text-sm text-slate-500">
-                      {formatDate(
-                        user.joined_at
-                      )}
+                    <td className="px-5 py-4 text-sm text-slate-500">
+                      {formatDateTime(user.last_login)}
                     </td>
 
-                    {/* ACTIONS */}
-
-                    <td className="px-6 py-5">
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            console.log(
-                              "View user",
-                              user.id
-                            );
-                          }}
-                          className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 text-slate-500 transition hover:bg-slate-50"
-                        >
-                          <Eye
-                            size={17}
-                          />
-                        </button>
-
-                        <button
-                          type="button"
-                          className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 text-slate-500 transition hover:bg-slate-50"
-                        >
-                          <MoreVertical
-                            size={17}
-                          />
-                        </button>
-                      </div>
+                    <td className="px-5 py-4">
+                      <button
+                        onClick={() => setSelectedUser(user.id)}
+                        className="inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold hover:bg-orange-50"
+                        style={{ color: PRIMARY }}
+                      >
+                        <Eye size={16} />
+                        View
+                      </button>
                     </td>
                   </tr>
-                )
-              )}
+                ))}
             </tbody>
           </table>
-        </div>
 
-        {/* =================================================
-            MOBILE
-        ================================================= */}
+          {loading && (
+            <div className="flex justify-center p-12">
+              <RefreshCw
+                size={26}
+                color={PRIMARY}
+                className="animate-spin"
+              />
+            </div>
+          )}
 
-        <div className="divide-y divide-slate-100 md:hidden">
-          {paginatedUsers.map(
-            (
-              user
-            ) => (
-              <div
-                key={
-                  user.id
-                }
-                className="p-5"
-              >
-                <div className="flex items-start gap-3">
-                  <UserAvatar
-                    name={
-                      user.full_name
-                    }
-                  />
-
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate font-bold text-slate-800">
-                      {
-                        user.full_name
-                      }
-                    </p>
-
-                    <p className="mt-1 truncate text-xs text-slate-400">
-                      {
-                        user.email
-                      }
-                    </p>
-                  </div>
-
-                  <UserStatusBadge
-                    status={
-                      user.status
-                    }
-                  />
-                </div>
-
-                <div className="mt-5 grid grid-cols-2 gap-4">
-                  <MobileField
-                    label="Organization"
-                    value={
-                      user.organization
-                    }
-                  />
-
-                  <MobileField
-                    label="Role"
-                    value={
-                      formatRole(
-                        user.role
-                      )
-                    }
-                  />
-
-                  <MobileField
-                    label="Phone"
-                    value={
-                      user.phone
-                    }
-                  />
-
-                  <MobileField
-                    label="Verification"
-                    value={
-                      user.verified
-                        ? "Verified"
-                        : "Not verified"
-                    }
-                  />
-                </div>
-
-                <button
-                  type="button"
-                  className="mt-5 flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-200 py-3 text-sm font-bold text-slate-600"
-                >
-                  <Eye
-                    size={17}
-                  />
-
-                  View User
-                </button>
-              </div>
-            )
+          {!loading && !error && users.length === 0 && (
+            <div className="p-12 text-center">
+              <UsersIcon
+                size={34}
+                className="mx-auto text-slate-300"
+              />
+              <p className="mt-3 text-sm font-semibold text-slate-500">
+                No users found.
+              </p>
+            </div>
           )}
         </div>
 
-        {/* =================================================
-            EMPTY
-        ================================================= */}
+        {/* Pagination */}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 p-5">
+          <p className="text-xs text-slate-500">
+            Page {page} of {totalPages} ·{" "}
+            {formatNumber(total)} accounts
+          </p>
 
-        {paginatedUsers.length ===
-          0 && (
-          <div className="px-6 py-20 text-center">
-            <div
-              className="mx-auto flex h-20 w-20 items-center justify-center rounded-[28px]"
-              style={{
-                backgroundColor:
-                  `${Colors.primary}10`,
-              }}
+          <div className="flex gap-2">
+            <button
+              disabled={page <= 1 || loading}
+              onClick={() => setPage((prev) => prev - 1)}
+              className="rounded-xl border border-slate-200 p-2.5 disabled:opacity-40"
+              aria-label="Previous page"
             >
-              <Users
-                size={34}
-                color={
-                  Colors.primary
-                }
-              />
-            </div>
-
-            <h3 className="mt-5 text-lg font-black text-slate-800">
-              No users found
-            </h3>
-
-            <p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-slate-500">
-              Try changing your
-              search or filters.
-            </p>
+              <ChevronLeft size={18} />
+            </button>
 
             <button
-              type="button"
-              onClick={
-                resetFilters
-              }
-              className="mt-5 font-bold"
-              style={{
-                color:
-                  Colors.primary,
-              }}
+              disabled={page >= totalPages || loading}
+              onClick={() => setPage((prev) => prev + 1)}
+              className="rounded-xl border border-slate-200 p-2.5 disabled:opacity-40"
+              aria-label="Next page"
             >
-              Clear filters
+              <ChevronRight size={18} />
             </button>
           </div>
-        )}
-
-        {/* =================================================
-            PAGINATION
-        ================================================= */}
-
-        {filteredUsers.length >
-          0 && (
-          <div className="flex flex-col gap-4 border-t border-slate-100 px-6 py-5 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-sm text-slate-500">
-              Showing{" "}
-              <span className="font-bold text-slate-700">
-                {startIndex +
-                  1}
-              </span>{" "}
-              to{" "}
-              <span className="font-bold text-slate-700">
-                {Math.min(
-                  startIndex +
-                    perPage,
-                  filteredUsers.length
-                )}
-              </span>{" "}
-              of{" "}
-              <span className="font-bold text-slate-700">
-                {
-                  filteredUsers.length
-                }
-              </span>
-            </p>
-
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                disabled={
-                  page === 1
-                }
-                onClick={() =>
-                  setPage(
-                    (
-                      current
-                    ) =>
-                      Math.max(
-                        1,
-                        current -
-                          1
-                      )
-                  )
-                }
-                className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 text-slate-500 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                <ChevronLeft
-                  size={18}
-                />
-              </button>
-
-              <div
-                className="flex h-10 min-w-10 items-center justify-center rounded-xl px-3 text-sm font-black text-white"
-                style={{
-                  backgroundColor:
-                    Colors.primary,
-                }}
-              >
-                {page}
-              </div>
-
-              <span className="text-sm text-slate-400">
-                of{" "}
-                {
-                  totalPages
-                }
-              </span>
-
-              <button
-                type="button"
-                disabled={
-                  page ===
-                  totalPages
-                }
-                onClick={() =>
-                  setPage(
-                    (
-                      current
-                    ) =>
-                      Math.min(
-                        totalPages,
-                        current +
-                          1
-                      )
-                  )
-                }
-                className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 text-slate-500 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                <ChevronRight
-                  size={18}
-                />
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-/*
- * =====================================================
- * SUMMARY CARD
- * =====================================================
- */
-
-function SummaryCard({
-  icon: Icon,
-  label,
-  value,
-  helper,
-}) {
-  return (
-    <div className="rounded-[26px] border border-slate-100 bg-white p-5 shadow-sm">
-      <div className="flex items-start justify-between">
-        <div>
-          <p className="text-sm font-medium text-slate-500">
-            {label}
-          </p>
-
-          <p className="mt-2 text-3xl font-black text-slate-900">
-            {value}
-          </p>
         </div>
+      </section>
 
-        <div
-          className="flex h-12 w-12 items-center justify-center rounded-2xl"
-          style={{
-            backgroundColor:
-              `${Colors.primary}12`,
-          }}
-        >
-          <Icon
-            size={22}
-            color={
-              Colors.primary
-            }
-          />
-        </div>
-      </div>
-
-      <p className="mt-4 text-xs text-slate-400">
-        {helper}
-      </p>
-    </div>
-  );
-}
-
-/*
- * =====================================================
- * AVATAR
- * =====================================================
- */
-
-function UserAvatar({
-  name,
-}) {
-  const initials =
-    String(
-      name ||
-      "U"
-    )
-      .split(" ")
-      .filter(Boolean)
-      .slice(0, 2)
-      .map(
-        (part) =>
-          part[0]
-      )
-      .join("")
-      .toUpperCase();
-
-  return (
-    <div
-      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-sm font-black"
-      style={{
-        backgroundColor:
-          `${Colors.primary}12`,
-        color:
-          Colors.primary,
-      }}
-    >
-      {initials}
-    </div>
-  );
-}
-
-/*
- * =====================================================
- * ROLE BADGE
- * =====================================================
- */
-
-function RoleBadge({
-  role,
-}) {
-  return (
-    <span
-      className="inline-flex rounded-full px-3 py-1.5 text-xs font-bold"
-      style={{
-        backgroundColor:
-          `${Colors.primary}10`,
-        color:
-          Colors.primary,
-      }}
-    >
-      {formatRole(
-        role
+      {/* User details */}
+      {selectedUser !== null && (
+        <UserDetails
+          userId={selectedUser}
+          currentAdmin={currentAdmin}
+          onClose={() => setSelectedUser(null)}
+          onChanged={refresh}
+        />
       )}
-    </span>
-  );
-}
-
-/*
- * =====================================================
- * USER STATUS
- * =====================================================
- */
-
-function UserStatusBadge({
-  status,
-}) {
-  const normalized =
-    String(
-      status ||
-      ""
-    ).toLowerCase();
-
-  if (
-    normalized ===
-    "active"
-  ) {
-    return (
-      <span className="inline-flex rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-600">
-        Active
-      </span>
-    );
-  }
-
-  if (
-    normalized ===
-    "suspended"
-  ) {
-    return (
-      <span className="inline-flex rounded-full bg-red-50 px-3 py-1.5 text-xs font-bold text-red-600">
-        Suspended
-      </span>
-    );
-  }
-
-  return (
-    <span className="inline-flex rounded-full bg-slate-100 px-3 py-1.5 text-xs font-bold capitalize text-slate-500">
-      {status}
-    </span>
-  );
-}
-
-/*
- * =====================================================
- * TABLE HEAD
- * =====================================================
- */
-
-function TableHead({
-  children,
-}) {
-  return (
-    <th className="px-6 py-4 text-xs font-bold uppercase tracking-wide text-slate-400">
-      {children}
-    </th>
-  );
-}
-
-/*
- * =====================================================
- * MOBILE FIELD
- * =====================================================
- */
-
-function MobileField({
-  label,
-  value,
-}) {
-  return (
-    <div>
-      <p className="text-xs text-slate-400">
-        {label}
-      </p>
-
-      <p className="mt-1 text-sm font-bold text-slate-700">
-        {value || "—"}
-      </p>
     </div>
-  );
-}
-
-/*
- * =====================================================
- * FORMAT ROLE
- * =====================================================
- */
-
-function formatRole(
-  role
-) {
-  if (!role) {
-    return "No Role";
-  }
-
-  return String(
-    role
-  )
-    .split("_")
-    .map(
-      (word) =>
-        word
-          .charAt(0)
-          .toUpperCase() +
-        word.slice(1)
-    )
-    .join(" ");
-}
-
-/*
- * =====================================================
- * FORMAT DATE
- * =====================================================
- */
-
-function formatDate(
-  value
-) {
-  if (!value) {
-    return "—";
-  }
-
-  return new Date(
-    `${value}T00:00:00`
-  ).toLocaleDateString(
-    "en-KE",
-    {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-    }
   );
 }

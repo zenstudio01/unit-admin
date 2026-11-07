@@ -7,6 +7,7 @@ import {
   Wrench,
   X,
   House,
+  Wallet,
 } from "lucide-react";
 
 import {
@@ -38,6 +39,11 @@ const menuItems = [
     icon: House,
   },
   {
+    name: "Payments",
+    path: "/payments",
+    icon: Wallet,
+  },
+  {
     name: "Subscriptions",
     path: "/subscriptions",
     icon: CreditCard,
@@ -46,6 +52,11 @@ const menuItems = [
     name: "Maintenance",
     path: "/maintenance",
     icon: Wrench,
+  },
+  {
+    name: "Construction Projects",
+    path: "/construction-projects",
+    icon: Building2,
   },
   {
     name: "Settings",
