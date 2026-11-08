@@ -8,6 +8,7 @@ import {
   X,
   House,
   Wallet,
+  Clipboard,
 } from "lucide-react";
 
 import {
@@ -54,9 +55,19 @@ const menuItems = [
     icon: Wrench,
   },
   {
+    name: "Tenants",
+    path: "/tenants",
+    icon:  Users,
+  },
+  {
     name: "Construction Projects",
     path: "/construction-projects",
     icon: Building2,
+  },
+  {
+    name: "Reports",
+    path: "/reports",
+    icon: Clipboard,
   },
   {
     name: "Settings",
