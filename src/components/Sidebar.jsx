@@ -21,7 +21,7 @@ import Colors from "../constants/colors";
 const menuItems = [
   {
     name: "Dashboard",
-    path: "/",
+    path: "/dashboard",
     icon: LayoutDashboard,
   },
   {
